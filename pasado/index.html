@@ -83,8 +83,8 @@
           </button>
         </div>
         <div class="playhead-scrub">
-          <span class="scrub-time" id="scrubTime">00:00 / 00:00</span>
-          <input type="range" min="0" max="100" step="0.01" value="0" class="scrub-bar" id="scrubBar">
+          <span class="scrub-time" id="scrubTime">00:00 / 01:30</span>
+          <input type="range" min="0" max="100" value="0" class="scrub-bar" id="scrubBar">
         </div>
         <div class="vol-row">
           <span class="vol-label">
@@ -100,65 +100,33 @@
     <div class="panel properties">
       <div class="panel-header">
         <span class="panel-title">Propiedades</span>
-        <button class="icon-btn" id="btn-reset-props" title="Reestablecer Valores a Por Defecto">
-          <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M1 4v4h4M13 10V6h-4M1 8A6 6 0 106 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-      </div>
-      <div class="prop-section">
-        <div class="prop-section-title">Velocidad</div>
-        <div class="speed-btns" id="speedBtns">
-            <button class="btn-speed" data-speed="0.25">0.25x</button>
-            <button class="btn-speed" data-speed="0.5">0.5x</button>
-            <button class="btn-speed active" data-speed="1.0">1x</button>
-            <button class="btn-speed" data-speed="2.0">2x</button>
-            <button class="btn-speed" data-speed="4.0">4x</button>
-        </div>
-        <div class="prop-row">
-          <span class="prop-label" style="width:65px;">Velocidad</span>
-          <input type="range" min="0.1" max="4.0" step="0.1" value="1.0" class="prop-slider" id="speedSlider">
-          <span style="font-size:11px;font-weight:600;min-width:32px;text-align:right;" id="speedVal">1.0x</span>
-        </div>
       </div>
       <div class="prop-section">
         <div class="prop-section-title">Transformar</div>
         <div class="prop-row">
           <span class="prop-label">Escala</span>
           <input type="range" min="10" max="200" value="100" class="prop-slider" id="scaleSlider">
-          <button class="kf-btn" id="kf-scale" title="Añadir Keyframe Escala">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0L12 6L6 12L0 6Z"/></svg>
-          </button>
           <span style="font-size:10px;color:var(--muted);min-width:28px;text-align:right;" id="scaleVal">100%</span>
         </div>
         <div class="prop-row">
           <span class="prop-label">Rotación</span>
           <input type="range" min="-180" max="180" value="0" class="prop-slider" id="rotSlider">
-          <button class="kf-btn" id="kf-rotation" title="Añadir Keyframe Rotación">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0L12 6L6 12L0 6Z"/></svg>
-          </button>
           <span style="font-size:10px;color:var(--muted);min-width:28px;text-align:right;" id="rotVal">0°</span>
         </div>
-        <div class="prop-row" style="align-items: flex-start;">
-          <span class="prop-label" style="margin-top:4px;">Posición</span>
-          <div class="d-pad">
-             <button class="dir-btn btn-up" id="btn-posY-minus" title="Mover Arriba">↑</button>
-             <button class="dir-btn btn-left" id="btn-posX-minus" title="Mover Izquierda">←</button>
-             <button class="dir-btn btn-right" id="btn-posX-plus" title="Mover Derecha">→</button>
-             <button class="dir-btn btn-down" id="btn-posY-plus" title="Mover Abajo">↓</button>
-          </div>
-          <button class="kf-btn" id="kf-pos" title="Añadir Keyframe Posición" style="margin-top:8px;">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0L12 6L6 12L0 6Z"/></svg>
-          </button>
+        <div class="prop-row">
+          <span class="prop-label">Pos. X</span>
+          <input type="number" value="0" class="prop-input">
         </div>
-
+        <div class="prop-row">
+          <span class="prop-label">Pos. Y</span>
+          <input type="number" value="0" class="prop-input">
+        </div>
       </div>
       <div class="prop-section">
         <div class="prop-section-title">Apariencia</div>
         <div class="prop-row">
           <span class="prop-label">Opacidad</span>
           <input type="range" min="0" max="100" value="100" class="prop-slider" id="opacSlider">
-          <button class="kf-btn" id="kf-opacity" title="Añadir Keyframe Opacidad">
-            <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0L12 6L6 12L0 6Z"/></svg>
-          </button>
           <span style="font-size:10px;color:var(--muted);min-width:28px;text-align:right;" id="opacVal">100%</span>
         </div>
         <div class="prop-row">
@@ -170,6 +138,9 @@
           <div class="color-swatch" style="background:#3a7bd5;"></div>
           <div class="color-swatch" style="background:#e85d4a;"></div>
         </div>
+      </div>
+      <div class="prop-section">
+        <button class="btn-small btn-accent">Aplicar cambios</button>
       </div>
     </div>
 
@@ -187,10 +158,6 @@
         </button>
         <button class="tl-btn">
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M6 2v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Añadir pista
-        </button>
-        <div style="width: 1px; height: 16px; background: var(--border2); margin: 0 4px;"></div>
-        <button class="tl-btn" id="kf-master" title="Añadir Fotograma Clave Maestro (Todas las propiedades)">
-          <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0L12 6L6 12L0 6Z"/></svg> Keyframe
         </button>
       </div>
       <div class="tl-zoom">

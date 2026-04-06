@@ -8,12 +8,6 @@ export const state = {
     { id:'text', label:'Texto', icon:'T' }
   ],
   selectedClipId: null,
-  currentTime: 0, 
+  playheadX: 0, 
   isPlaying: false
 };
-
-export let PX_PER_SEC = 50;
-
-export function setPxPerSec(val) {
-    PX_PER_SEC = val;
-}

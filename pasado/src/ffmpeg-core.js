@@ -57,9 +57,9 @@ export async function exportVideo(btnElement) {
      }
   }
 
-  // Dimensiones matemáticas
-  const pxPerSec = 50; // Sincronizado globalmente (antes 7.8)
-  const leftOffset = 0; // Desfasaje inicial corregido a 0 matemático
+  // Dimensiones matemáticas como antes
+  const pxPerSec = 7.8;
+  const leftOffset = 72;
   
   const allClips = [...vClips, ...aClips];
   const maxEndPx = Math.max(...allClips.map(c => c.start + c.width));
