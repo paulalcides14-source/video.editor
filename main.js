@@ -579,7 +579,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 segundos de timeout
 
               const response = await fetch(
-                  "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
+                  "/api/hf/models/openai/whisper-large-v3",
                   {
                       headers: { 
                           Authorization: `Bearer ${HF_TOKEN}`,
