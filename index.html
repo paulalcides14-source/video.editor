@@ -25,6 +25,12 @@
       Trim
     </button>
     <div class="tb-sep"></div>
+    <select id="aspectRatioSelector" class="tb-btn" style="background:var(--surface2); border:1px solid var(--border2); outline:none; cursor:pointer;">
+        <option value="16:9">🎥 16:9 YouTube</option>
+        <option value="9:16">📱 9:16 Reels</option>
+        <option value="1:1">🖼️ 1:1 Post</option>
+    </select>
+    <div class="tb-sep"></div>
     <button class="tb-btn"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1" y="4" width="12" height="8" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 4V2h4v2" stroke="currentColor" stroke-width="1.2" fill="none"/></svg> Texto</button>
     <button class="tb-btn"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M1 7a6 6 0 0012 0A6 6 0 001 7z" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M7 1c-2 2-2 10 0 12M1 7h12" stroke="currentColor" stroke-width="1.2"/></svg> Transición</button>
     <button class="tb-btn"><svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v3l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Efectos</button>
@@ -65,15 +71,25 @@
     <!-- MONITOR -->
     <div class="panel monitor">
       <div class="preview-area" id="previewArea">
-        <div class="video-frame" id="videoFrame">
-          <canvas class="preview-canvas" id="previewCanvas" width="480" height="270"></canvas>
+        <div class="video-frame" id="videoFrame" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
+          <canvas class="preview-canvas" id="previewCanvas" width="854" height="480" style="max-width:100%; max-height:100%; object-fit:contain; background:black; transition: all 0.3s ease; box-shadow: 0 4px 12px rgba(0,0,0,0.5);"></canvas>
+          
+          <!-- MARCADORES DE ÁREA SEGURA (Ocultos por defecto) -->
+          <div class="safe-zones" id="safeZones" style="display:none; pointer-events: none; position: absolute; inset: 0;">
+             <!-- Simulación UI Derechos (Corazón, Comentarios, Compartir) -->
+             <div style="position:absolute; right:10px; bottom:20%; width:40px; height:35%; background:rgba(255,0,0,0.2); border:1px dashed red; border-radius:10px;" title="Zona de Botones (Corazón, Compartir)"></div>
+             <!-- Simulación UI Inferior (Nombre de usuario y Caption) -->
+             <div style="position:absolute; left:10px; bottom:2%; width:80%; height:15%; background:rgba(255,0,0,0.2); border:1px dashed red; border-radius:10px;" title="Zona de Texto (Usuario y Descripción)"></div>
+             <!-- Título centrado indicativo -->
+             <div style="position:absolute; top:10px; width:100%; text-align:center; color:rgba(255,255,255,0.7); font-size:12px; font-weight:600; text-shadow:1px 1px 2px black;">MODO: SAFE AREA (SHORTS/REELS)</div>
+          </div>
+          
           <div class="preview-overlay">
             <button class="play-btn-big" id="playBtn">
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M5 3l10 6-10 6V3z" fill="white"/></svg>
             </button>
           </div>
-          <div class="timecode" id="timecode">00:00:00:00</div>
-          <div class="safe-area-btn">Área segura</div>
+          <div class="safe-area-btn" id="btn-safe-area" style="cursor:pointer;">📏 Área segura</div>
         </div>
       </div>
       <div class="monitor-controls">
@@ -82,9 +98,8 @@
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 2.5l7 4.5-7 4.5V2.5z" fill="white"/></svg>
           </button>
         </div>
-        <div class="playhead-scrub">
-          <span class="scrub-time" id="scrubTime">00:00 / 00:00</span>
-          <input type="range" min="0" max="100" step="0.01" value="0" class="scrub-bar" id="scrubBar">
+        <div class="playhead-scrub" style="justify-content:center;">
+          <span class="scrub-time" id="scrubTime" style="font-size: 14px; font-weight: bold; width:auto; text-align:center;">00:00:00</span>
         </div>
         <div class="vol-row">
           <span class="vol-label">
@@ -161,15 +176,6 @@
           </button>
           <span style="font-size:10px;color:var(--muted);min-width:28px;text-align:right;" id="opacVal">100%</span>
         </div>
-        <div class="prop-row">
-          <span class="prop-label">Brillo</span>
-          <input type="range" min="-100" max="100" value="0" class="prop-slider">
-        </div>
-        <div class="prop-row">
-          <span class="prop-label">Color</span>
-          <div class="color-swatch" style="background:#3a7bd5;"></div>
-          <div class="color-swatch" style="background:#e85d4a;"></div>
-        </div>
       </div>
     </div>
 
@@ -189,7 +195,10 @@
           <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6h8M6 2v8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Añadir pista
         </button>
         <div style="width: 1px; height: 16px; background: var(--border2); margin: 0 4px;"></div>
-        <button class="tl-btn" id="kf-master" title="Añadir Fotograma Clave Maestro (Todas las propiedades)">
+        <button class="tl-btn" id="btn-ia-subs" style="color: #6366f1; font-weight:bold; background: #eef2ff; border-radius:4px; padding:2px 8px; border:1px solid #c7d2fe; display:flex; align-items:center; justify-content:center; gap:4px; transition: all 0.2s ease; cursor:pointer; min-width:170px;">
+          ✨ Auto-Subtítulo IA
+        </button>
+        <button class="tl-btn" id="kf-master" title="Añadir Fotograma Clave Maestro (Todas las propiedades)" style="margin-left:auto;">
           <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0L12 6L6 12L0 6Z"/></svg> Keyframe
         </button>
       </div>

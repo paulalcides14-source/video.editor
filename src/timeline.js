@@ -165,7 +165,6 @@ export function updatePlayheadVisual() {
   if (phLine) phLine.style.left = visualX + 'px';
   if (phHead) phHead.style.left = visualX + 'px';
   
-  const timecode = document.getElementById('timecode');
   const scrubTime = document.getElementById('scrubTime');
   
   const m = Math.floor(state.currentTime / 60);
@@ -173,7 +172,6 @@ export function updatePlayheadVisual() {
   const ms = Math.floor((state.currentTime % 1) * 100);
 
   const tStr = `00:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}:${String(ms).padStart(2,'0')}`;
-  if (timecode) timecode.textContent = tStr;
 
   // Calculo real del "Tiempo visual máximo usado"
   // Para el texto / 01:30 -> Será el maxPx usado o al menos 5 seg.
@@ -183,14 +181,6 @@ export function updatePlayheadVisual() {
   const maxStr = `00:${String(mMax).padStart(2,'0')}:${String(sMax).padStart(2,'0')}`;
   
   if (scrubTime) scrubTime.textContent = `${tStr.substring(0,8)} / ${maxStr}`;
-  
-  // La barra de avance ahora calcula su % en relación al Clip más alejado, no al vacío
-  let pct = 0;
-  if(maxPx > 0) {
-     pct = Math.round((playheadX / maxPx) * 100) || 0;
-  }
-  const scrubBar = document.getElementById('scrubBar');
-  if(scrubBar) scrubBar.value = Math.min(pct, 100);
   
   window.dispatchEvent(new CustomEvent('time-update'));
 }
@@ -279,17 +269,7 @@ export function initTimelineEvents() {
     if(draggingPlayhead) draggingPlayhead = false;
   });
 
-  const scrubBar = document.getElementById('scrubBar');
-  if(scrubBar) {
-      scrubBar.addEventListener('input', e => {
-        // Obtenemos el MaxPx usado para entender el 100% de la barra temporal
-        let maxPx = Math.max(...state.clips.map(c => c.start + c.width), 1);
-        const pct = parseFloat(e.target.value)/100;
-        const playheadX = pct * maxPx;
-        state.currentTime = playheadX / PX_PER_SEC;
-        updatePlayheadVisual();
-      });
-  }
+
 
   const triggerSplit = () => {
     if (!state.selectedClipId) return alert("Selecciona un clip primero");

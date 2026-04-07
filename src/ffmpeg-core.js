@@ -4,6 +4,38 @@ import { state } from './state.js';
 
 let ffmpeg = null;
 
+function generateFFmpegExpression(keyframes, baseValue) {
+    if (!keyframes || keyframes.length === 0) return baseValue.toString();
+    
+    const kfs = [...keyframes].sort((a, b) => a.time - b.time);
+    let expression = "";
+    
+    for (let i = 0; i < kfs.length - 1; i++) {
+        const k1 = kfs[i];
+        const k2 = kfs[i + 1];
+        
+        let segment = "";
+        if (Math.abs(k2.time - k1.time) < 0.001) {
+           segment = `${k1.value}`;
+        } else {
+           segment = `${k1.value}+(${k2.value}-${k1.value})*(t-${k1.time})/(${k2.time}-${k1.time})`;
+        }
+        
+        if (i === 0) {
+            expression = `if(lt(t,${k1.time}),${k1.value},if(lt(t,${k2.time}),${segment}`;
+        } else {
+            expression += `,if(lt(t,${k2.time}),${segment}`;
+        }
+    }
+    
+    if (expression === "") return baseValue.toString();
+    
+    const lastValue = kfs[kfs.length - 1].value;
+    const closingParenthesis = ")".repeat(kfs.length - 1);
+    expression += `,${lastValue}${closingParenthesis}`;
+    return expression;
+}
+
 export async function initFFmpeg() {
   try {
     ffmpeg = new FFmpeg();
@@ -28,6 +60,19 @@ export function getFFmpegInstance() {
     return ffmpeg;
 }
 
+export async function extraerAudioParaIA(videoFile) {
+    if(!ffmpeg) return null;
+    try {
+        await ffmpeg.writeFile('input_video.mp4', await fetchFile(videoFile));
+        await ffmpeg.exec(['-i', 'input_video.mp4', '-vn', '-acodec', 'libmp3lame', '-ar', '16000', '-ac', '1', 'audio_lite.mp3']);
+        const data = await ffmpeg.readFile('audio_lite.mp3');
+        return new Blob([data.buffer], { type: 'audio/mp3' });
+    } catch(e) {
+        console.error("Error extrayendo audio con FFmpeg:", e);
+        return null;
+    }
+}
+
 export async function exportVideo(btnElement) {
   if(!ffmpeg) return alert("FFmpeg no terminó de cargar.");
   
@@ -41,12 +86,14 @@ export async function exportVideo(btnElement) {
   btnElement.style.pointerEvents = 'none';
   btnElement.style.opacity = '0.7';
 
-  // 1. INGESTA A LA MEMORIA (Carga de tus archivos al explorador físico virtual)
+  // 1. INGESTA A LA MEMORIA (Carga de tus archivos)
   const uniqueResIds = new Set([...vClips, ...aClips].map(c => c.resourceId));
   const inputsMap = {}; 
   
-  // Limpiamos la virtualización posible previa
   try { await ffmpeg.deleteFile('proyecto_finalizado.mp4'); } catch(e){}
+
+  // Ingestar Fuente Montserrat para los subtítulos
+  try { await ffmpeg.writeFile('montserrat.ttf', await fetchFile('./Montserrat-ExtraBold.ttf')); } catch(e) { console.warn("Fuente falló", e); }
 
   for (const id of uniqueResIds) {
      const res = state.resources.find(r => r.id === id);
@@ -70,8 +117,12 @@ export async function exportVideo(btnElement) {
 
   const args = [];
   
+  let renderW = 854; let renderH = 480;
+  if (state.aspectRatio === '9:16') { renderW = 480; renderH = 854; }
+  else if (state.aspectRatio === '1:1') { renderW = 640; renderH = 640; }
+  
   // Input [0] -> Canvas Fondo Negro 
-  args.push('-f', 'lavfi', '-i', `color=c=black:s=854x480:d=${maxEndSecs.toFixed(2)}`);
+  args.push('-f', 'lavfi', '-i', `color=c=black:s=${renderW}x${renderH}:d=${maxEndSecs.toFixed(2)}`);
   
   // Asignar variables de Entrada
   const resourceToInputIdxMap = {};
@@ -103,13 +154,55 @@ export async function exportVideo(btnElement) {
     const delayID = `delayV${i}`;
     const outBaseID = `mergedV${i}`;
     
-    // Escala -> Recorta a Segundos de duración -> Retrasa (Push Forward) -> Salida
-    filterParts.push(`[${inputIdx}:v]scale=854:480,trim=duration=${durSecs.toFixed(3)},setpts=PTS-STARTPTS+${startSecs.toFixed(3)}/TB[${delayID}]`);
-    // Pegarlo en el mainboard
-    filterParts.push(`[${currentBaseVideo}][${delayID}]overlay=x=0:y=0:eof_action=pass[${outBaseID}]`);
+    const scaleExpr = generateFFmpegExpression(clip.keyframes?.scale, clip.properties.scale);
+    const opacityExpr = generateFFmpegExpression(clip.keyframes?.opacity, clip.properties.opacity);
+    const xExpr = generateFFmpegExpression(clip.keyframes?.posX, clip.properties.posX);
+    const yExpr = generateFFmpegExpression(clip.keyframes?.posY, clip.properties.posY);
+    const rotExpr = generateFFmpegExpression(clip.keyframes?.rotation, clip.properties.rotation);
+    
+    let clipFilter = `[${inputIdx}:v]format=rgba,`;
+    clipFilter += `rotate=a='(${rotExpr})*PI/180':ow='rotw(a)':oh='roth(a)':c=none,`;
+    clipFilter += `scale=w='iw*(${scaleExpr})':h='ih*(${scaleExpr})':eval=frame,`;
+    
+    const hasOpacityKf = clip.keyframes && clip.keyframes.opacity && clip.keyframes.opacity.length > 0;
+    if (hasOpacityKf) {
+        clipFilter += `geq=r='p(X,Y)':g='p(X,Y)':b='p(X,Y)':a='p(X,Y)*(${opacityExpr})',`;
+    } else if (clip.properties.opacity < 1.0) {
+        clipFilter += `colorchannelmixer=aa=${clip.properties.opacity},`;
+    }
+    
+    clipFilter += `trim=duration=${durSecs.toFixed(3)},setpts=PTS-STARTPTS+${startSecs.toFixed(3)}/TB[${delayID}]`;
+    
+    filterParts.push(clipFilter);
+    filterParts.push(`[${currentBaseVideo}][${delayID}]overlay=x='(W-w)/2+(${xExpr})':y='(H-h)/2+(${yExpr})':eof_action=pass[${outBaseID}]`);
     
     currentBaseVideo = outBaseID;
   });
+
+  // A.2) CONSTRUIR PIPELINE DE TEXTOS (Subtítulos IA)
+  const tClips = state.clips.filter(c => c.type === 'text');
+  for (let i = 0; i < tClips.length; i++) {
+     const clip = tClips[i];
+     let durSecs = (clip.width / pxPerSec);
+     let startSecs = Math.max(0, (clip.start - leftOffset) / pxPerSec);
+     if (startSecs > maxEndSecs) continue; 
+     if (startSecs + durSecs > maxEndSecs) durSecs = maxEndSecs - startSecs;
+     
+     const outBaseID = `mergedT${i}`;
+     
+     // Archivo temporal de texto para escapar caracteres extraños sin romper ffmpeg cmd
+     const txtName = `txt_${i}.txt`;
+     await ffmpeg.writeFile(txtName, clip.textStr || clip.label);
+     
+     const fontSize = (clip.properties.fontSize || 16) * 3; 
+     const yPos = `(h/2) + ${clip.properties.posY ?? 200}`;
+     
+     // Borde grueso TikTok-style simulado usando borderw=3
+     const drawtextFilter = `drawtext=fontfile='montserrat.ttf':textfile='${txtName}':fontcolor=white:fontsize=${fontSize}:x=(w-text_w)/2:y=${yPos}:borderw=4:bordercolor=black:shadowcolor=black@0.8:shadowx=2:shadowy=2:enable='between(t,${startSecs.toFixed(3)},${(startSecs+durSecs).toFixed(3)})'`;
+     
+     filterParts.push(`[${currentBaseVideo}]${drawtextFilter}[${outBaseID}]`);
+     currentBaseVideo = outBaseID;
+  }
 
   // B) CONSTRUIR PIPELINE DE AUDIO (Mezcla de todos)
   let aDelayFilters = [];

@@ -29,20 +29,14 @@ export function initPreviewLoop() {
 
   if(!canvas || !area) return;
 
-  function resizeCanvas() {
-      const aw = area.clientWidth - 20;
-      const ah = area.clientHeight - 20;
-      const aspect = 16/9;
-      let w = Math.min(aw, ah * aspect);
-      let h = w / aspect;
-      frame.style.width = Math.round(w) + 'px';
-      frame.style.height = Math.round(h) + 'px';
-      canvas.width = Math.round(w);
-      canvas.height = Math.round(h);
+  function updateCanvasResolution() {
+      if (state.aspectRatio === '16:9') { canvas.width = 854; canvas.height = 480; }
+      else if (state.aspectRatio === '9:16') { canvas.width = 480; canvas.height = 854; }
+      else if (state.aspectRatio === '1:1') { canvas.width = 640; canvas.height = 640; }
   }
 
-  resizeCanvas();
-  window.addEventListener('resize', resizeCanvas);
+  updateCanvasResolution();
+  window.addEventListener('aspect-changed', updateCanvasResolution);
 
   let lastTime = performance.now();
 
@@ -142,6 +136,7 @@ export function initPreviewLoop() {
          
          // MOTOR DE SINCRONIZACIÓN DE AUDIO SUGERIDO POR EL USUARIO
          if(res && res.audioElement && state.isPlaying) {
+             res.audioElement.volume = (clip.properties.opacity ?? 1.0) * (state.globalVolume ?? 0.8);
              const clipLocalTimeSecs = (currentPx - clip.start) / PX_PER_SEC;
              
              // Corrección ruda si el desface supera 150ms 
@@ -153,6 +148,44 @@ export function initPreviewLoop() {
                  res.audioElement.play().catch(e => console.warn("Auto-play de audio bloqueado", e));
              }
          }
+      }
+
+      if (clip.type === 'text') {
+         hasMedia = true;
+         ctx.save();
+         const tOpac = getInterpolatedValue(clip.keyframes?.opacity, clipLocalTimeSecs, clip.properties.opacity ?? 1.0);
+         const tScale = getInterpolatedValue(clip.keyframes?.scale, clipLocalTimeSecs, clip.properties.scale ?? 1.0);
+         const tRot = getInterpolatedValue(clip.keyframes?.rotation, clipLocalTimeSecs, clip.properties.rotation ?? 0);
+         const tPosX = getInterpolatedValue(clip.keyframes?.posX, clipLocalTimeSecs, clip.properties.posX ?? 0);
+         const tPosY = getInterpolatedValue(clip.keyframes?.posY, clipLocalTimeSecs, clip.properties.posY ?? 200);
+
+         ctx.globalAlpha = tOpac;
+         ctx.translate(canvas.width/2 + tPosX, canvas.height/2 + tPosY);
+         ctx.rotate(tRot * Math.PI / 180);
+         ctx.scale(tScale, tScale);
+         
+         // Setup Montserrat Font 
+         const fontSize = (clip.properties.fontSize ?? 16) * 3; // Upscale logic
+         ctx.font = `900 ${fontSize}px "Montserrat", sans-serif`;
+         ctx.fillStyle = clip.properties.color || '#ffffff';
+         ctx.textAlign = 'center';
+         ctx.textBaseline = 'middle';
+         
+         // TikTok aesthetic stroke & shadow
+         ctx.shadowColor = 'rgba(0,0,0,0.8)';
+         ctx.shadowBlur = 4;
+         ctx.shadowOffsetX = 2;
+         ctx.shadowOffsetY = 2;
+         
+         ctx.lineWidth = clip.properties.strokeWidth || 6;
+         ctx.strokeStyle = clip.properties.stroke || '#000000';
+         
+         // Extraemos el texto asignado por HF
+         const txt = clip.textStr || clip.label;
+         ctx.strokeText(txt, 0, 0);
+         ctx.fillText(txt, 0, 0);
+
+         ctx.restore();
       }
     });
 

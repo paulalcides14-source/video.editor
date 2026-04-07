@@ -1,7 +1,7 @@
 import './style.css';
 import { renderTimeline, initTimelineEvents } from './src/timeline.js';
 import { initPreviewLoop } from './src/preview.js';
-import { initFFmpeg, exportVideo } from './src/ffmpeg-core.js';
+import { initFFmpeg, exportVideo, extraerAudioParaIA } from './src/ffmpeg-core.js';
 import { state, PX_PER_SEC } from './src/state.js';
 import { getInterpolatedValue } from './src/preview.js';
 
@@ -161,7 +161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           renderTimeline();
       });
       
-      // ATAJO PROFESIONAL ZOOOM (Ctrl + MouseWheel)
+      
       const tlBody = document.getElementById('tlBody');
       if(tlBody) {
           tlBody.addEventListener('wheel', (e) => {
@@ -521,4 +521,184 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   if(playBtnT) playBtnT.addEventListener('click', togglePlay);
   if(playBtnB) playBtnB.addEventListener('click', togglePlay);
+  
+  const btnSafeArea = document.getElementById('btn-safe-area');
+  const safeZones = document.getElementById('safeZones');
+  if (btnSafeArea && safeZones) {
+      btnSafeArea.addEventListener('click', () => {
+          if (safeZones.style.display === 'none') {
+              safeZones.style.display = 'block';
+              btnSafeArea.style.background = 'var(--accent)';
+              btnSafeArea.style.color = '#fff';
+          } else {
+              safeZones.style.display = 'none';
+              btnSafeArea.style.background = '';
+              btnSafeArea.style.color = '';
+          }
+      });
+  }
+  
+  const aspectSelector = document.getElementById('aspectRatioSelector');
+  if (aspectSelector) {
+      aspectSelector.addEventListener('change', (e) => {
+          state.aspectRatio = e.target.value;
+          window.dispatchEvent(new CustomEvent('aspect-changed'));
+      });
+  }
+  
+  // === IA AUTO-SUBTITLES ===
+  const btnIaSubs = document.getElementById('btn-ia-subs');
+  if (btnIaSubs) {
+      btnIaSubs.addEventListener('click', async () => {
+          if (btnIaSubs.classList.contains('processing-ia')) return;
+          
+          const mediaClip = state.clips.find(c => c.type === 'video' || c.type === 'image' || c.type === 'audio' || c.type === 'music'); 
+          if (!mediaClip) return alert("Añade un video o audio a la pista antes de generar subtítulos.");
+          
+          const res = state.resources.find(r => r.id === mediaClip.resourceId);
+          if (!res || !res.file) return alert("El archivo original no está disponible en memoria.");
+          
+          const oldHtml = btnIaSubs.innerHTML;
+          btnIaSubs.classList.add('processing-ia');
+          btnIaSubs.innerHTML = "⏳ Extrayendo Audio...";
+          
+          try {
+              const audioBlob = await extraerAudioParaIA(res.file);
+              if (!audioBlob) throw new Error("FFmpeg falló al extraer el audio.");
+              
+              btnIaSubs.innerHTML = "🧠 Pensando (Whisper)...";
+              
+              let HF_TOKEN = window.localStorage.getItem('hf_temp_token');
+              if (!HF_TOKEN || HF_TOKEN === 'null') {
+                  HF_TOKEN = prompt("Ingresa tu token gratuito de HuggingFace (no se guardará en código):");
+                  if (HF_TOKEN) window.localStorage.setItem('hf_temp_token', HF_TOKEN);
+              }
+              if (!HF_TOKEN) throw new Error("Proceso cancelado. Se requiere un Token para invocar la IA.");
+              
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 segundos de timeout
+
+              const response = await fetch(
+                  "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
+                  {
+                      headers: { 
+                          Authorization: `Bearer ${HF_TOKEN}`,
+                          "Content-Type": "audio/mp3"
+                      },
+                      method: "POST",
+                      body: audioBlob,
+                      signal: controller.signal
+                  }
+              );
+              
+              clearTimeout(timeoutId);
+              
+              const resultText = await response.text();
+              let result;
+              try {
+                  result = JSON.parse(resultText);
+              } catch(jsonErr) {
+                  throw new Error("Hugging Face API falló o bloqueó la petición (posiblemente el audio es muy largo para la capa gratuita). Respuesta: " + resultText.substring(0, 50));
+              }
+              if (result.error && result.error.includes('loading')) {
+                  throw new Error("El modelo IA está despertando... Espere 20 segundos e intente de nuevo.");
+              }
+              if (result.error) throw new Error(result.error);
+              
+              if (result.chunks) {
+                  result.chunks.forEach(chunk => {
+                      state.clips.push({
+                          id: Date.now() + Math.random(),
+                          resourceId: null,
+                          track: 'text',
+                          label: chunk.text,
+                          type: 'text',
+                          start: chunk.timestamp[0] * PX_PER_SEC,
+                          width: Math.max(15, (chunk.timestamp[1] - chunk.timestamp[0]) * PX_PER_SEC),
+                          properties: { 
+                              color: '#ffffff', 
+                              fontSize: 16, 
+                              posX: 0, 
+                              posY: 150, 
+                              opacity: 1.0 
+                          },
+                          keyframes: { posX: [], posY: [], opacity: [], scale: [], rotation: [] },
+                          textStr: chunk.text
+                      });
+                  });
+              } else if (result.text) {
+                  throw new Error("La IA no devolvió marcas temporal.");
+              }
+              
+              const { renderTimeline } = await import('./src/timeline.js');
+              renderTimeline();
+              alert("¡Subtítulos listos!");
+          } catch(e) {
+              console.error(e);
+              alert("Error IA: " + e.message);
+          }
+          
+          btnIaSubs.classList.remove('processing-ia');
+          btnIaSubs.innerHTML = oldHtml;
+      });
+  }
+
+  // === CONTROLES DE ZOOM Y VOLUMEN ===
+  const tlZoom = document.getElementById('tlZoom');
+  if (tlZoom) {
+      tlZoom.addEventListener('input', async (e) => {
+          const val = parseInt(e.target.value); 
+          const { setPxPerSec } = await import('./src/state.js');
+          setPxPerSec(val);
+          const { renderTimeline } = await import('./src/timeline.js');
+          renderTimeline();
+      });
+  }
+
+  const tlVolSlider = document.getElementById('volSlider');
+  const tlVolVal = document.getElementById('volVal');
+  if (tlVolSlider) {
+      tlVolSlider.addEventListener('input', (e) => {
+          state.globalVolume = parseInt(e.target.value) / 100;
+          if(tlVolVal) tlVolVal.innerText = e.target.value + '%';
+      });
+  }
+
+  // AUTO-LOADER DE PRUEBAS PARA AUDIO MILITAR (Carpeta Pasado)
+  setTimeout(async () => {
+      try {
+          const pastAudioUrl = '/pasado/ElevenLabs_2026-04-06T02_40_50_MILITAR_gen_sp100_s40_sb75_v3.mp3';
+          const r = await fetch(pastAudioUrl);
+          if(!r.ok) return;
+          const blob = await r.blob();
+          const file = new File([blob], "AudioMilitar.mp3", { type: 'audio/mp3' });
+          
+          const audRes = {
+              id: Date.now() + 999,
+              type: 'audio',
+              file: file,
+              label: "Audio Militar",
+              audioElement: new Audio(URL.createObjectURL(file))
+          };
+          state.resources.push(audRes);
+          
+          state.clips.push({
+              id: Date.now() + 1000,
+              resourceId: audRes.id,
+              track: 'audio',
+              label: audRes.label,
+              type: 'audio',
+              start: 0,
+              width: 700, 
+              properties: { opacity: 1.0 },
+              keyframes: { opacity: [] }
+          });
+          
+          window.dispatchEvent(new CustomEvent('resource-added'));
+          const { renderTimeline } = await import('./src/timeline.js');
+          renderTimeline();
+          console.log("✅ Auto-loaded militar audio for testing.");
+      } catch(e) { console.warn("Auto-load failed", e); }
+  }, 1000);
+
 });
