@@ -4,3 +4,9 @@
     Cross-Origin-Opener-Policy = "same-origin"
     Cross-Origin-Embedder-Policy = "require-corp"
 
+[[redirects]]
+  from = "/api/hf/*"
+  to = "https://api-inference.huggingface.co/:splat"
+  status = 200
+  force = true
+

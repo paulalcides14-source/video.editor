@@ -555,8 +555,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           try {
               console.log(`Intento ${i + 1} de llamar a la IA...`);
               
-              const response = await fetch("https://api-inference.huggingface.co/models/openai/whisper-large-v3", {
-                  headers: { "Authorization": `Bearer ${HF_TOKEN}` },
+              const url = "/api/hf/models/openai/whisper-large-v3";
+              const response = await fetch(url, {
+                  headers: { 
+                      "Authorization": `Bearer ${HF_TOKEN}`,
+                      "Content-Type": "audio/mp3"
+                  },
                   method: "POST",
                   body: audioBlob,
                   signal: signal
