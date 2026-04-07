@@ -579,20 +579,14 @@ document.addEventListener('DOMContentLoaded', async () => {
               const controller = new AbortController();
               const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 segundos de timeout
 
-              // Convertir Blob a Base64 para enviarlo limpio en el JSON a la Función de Netlify
-              const reader = new FileReader();
-              reader.readAsDataURL(audioBlob);
-              await new Promise(resolve => reader.onload = resolve);
-              const base64Audio = reader.result.split(',')[1];
-
               const response = await fetch(
-                  "/.netlify/functions/whisper",
+                  "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
                   {
                       headers: { 
-                          "Content-Type": "application/json"
+                          "Authorization": `Bearer ${HF_TOKEN}`
                       },
                       method: "POST",
-                      body: JSON.stringify({ token: HF_TOKEN, audioBase64: base64Audio }),
+                      body: audioBlob,
                       signal: controller.signal
                   }
               );
