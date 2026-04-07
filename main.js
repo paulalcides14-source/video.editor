@@ -557,6 +557,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           
           const res = state.resources.find(r => r.id === mediaClip.resourceId);
           if (!res || !res.file) return alert("El archivo original no está disponible en memoria.");
+          if (res.file.size > 25 * 1024 * 1024) return alert("Video demasiado grande para la IA gratuita (máximo 25MB)");
           
           const oldHtml = btnIaSubs.innerHTML;
           btnIaSubs.classList.add('processing-ia');
@@ -582,8 +583,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                   "/api/hf/models/openai/whisper-large-v3",
                   {
                       headers: { 
-                          Authorization: `Bearer ${HF_TOKEN}`,
-                          "Content-Type": "audio/mp3"
+                          Authorization: `Bearer ${HF_TOKEN}`
                       },
                       method: "POST",
                       body: audioBlob,

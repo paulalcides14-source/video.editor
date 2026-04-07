@@ -1,5 +1,4 @@
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { createFFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
 import { state } from './state.js';
 
 let ffmpeg = null;
@@ -38,18 +37,13 @@ function generateFFmpegExpression(keyframes, baseValue) {
 
 export async function initFFmpeg() {
   try {
-    ffmpeg = new FFmpeg();
-    
-    ffmpeg.on('log', ({ message }) => {
-      console.log('[FFmpeg]', message);
+    ffmpeg = createFFmpeg({
+      log: true,
+      corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js'
     });
     
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-    const coreURL = await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript');
-    const wasmURL = await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm');
-    
     console.log("Iniciando motor WebAssembly...");
-    await ffmpeg.load({ coreURL, wasmURL });
+    await ffmpeg.load();
     console.log("✅ Motor FFmpeg listo para la acción.");
   } catch (error) {
     console.error("❌ FFmpeg Falló:", error);
@@ -60,15 +54,36 @@ export function getFFmpegInstance() {
     return ffmpeg;
 }
 
-export async function extraerAudioParaIA(videoFile) {
-    if(!ffmpeg) return null;
+export async function extraerAudioParaIA(file) {
     try {
-        await ffmpeg.writeFile('input_video.mp4', await fetchFile(videoFile));
-        await ffmpeg.exec(['-i', 'input_video.mp4', '-vn', '-acodec', 'libmp3lame', '-ar', '16000', '-ac', '1', 'audio_lite.mp3']);
-        const data = await ffmpeg.readFile('audio_lite.mp3');
+        // Asegúrate de que ffmpeg esté cargado antes de usarlo
+        if (!ffmpeg.isLoaded()) await ffmpeg.load();
+
+        // 1. Escribir el archivo en el sistema virtual de FFmpeg
+        // Usamos fetchFile para convertir el archivo de JS a algo que FFmpeg entienda
+        ffmpeg.FS('writeFile', 'input_file', await fetchFile(file));
+
+        // 2. Ejecutar comando (Extraer audio ligero para que Hugging Face no lo rechace)
+        // Usamos -ar 16000 (frecuencia que prefiere Whisper) y -ac 1 (mono para pesar menos)
+        await ffmpeg.run(
+            '-i', 'input_file',
+            '-vn', 
+            '-ar', '16000', 
+            '-ac', '1', 
+            '-b:a', '64k', 
+            'output_audio.mp3'
+        );
+
+        // 3. Leer el archivo resultante
+        const data = ffmpeg.FS('readFile', 'output_audio.mp3');
+        
+        // 4. Limpiar archivos para no saturar la memoria del navegador
+        ffmpeg.FS('unlink', 'input_file');
+        ffmpeg.FS('unlink', 'output_audio.mp3');
+
         return new Blob([data.buffer], { type: 'audio/mp3' });
-    } catch(e) {
-        console.error("Error extrayendo audio con FFmpeg:", e);
+    } catch (err) {
+        console.error("Error detallado en FFmpeg:", err);
         return null;
     }
 }
@@ -90,16 +105,16 @@ export async function exportVideo(btnElement) {
   const uniqueResIds = new Set([...vClips, ...aClips].map(c => c.resourceId));
   const inputsMap = {}; 
   
-  try { await ffmpeg.deleteFile('proyecto_finalizado.mp4'); } catch(e){}
+  try { ffmpeg.FS('unlink', 'proyecto_finalizado.mp4'); } catch(e){}
 
   // Ingestar Fuente Montserrat para los subtítulos
-  try { await ffmpeg.writeFile('montserrat.ttf', await fetchFile('./Montserrat-ExtraBold.ttf')); } catch(e) { console.warn("Fuente falló", e); }
+  try { ffmpeg.FS('writeFile', 'montserrat.ttf', await fetchFile('./Montserrat-ExtraBold.ttf')); } catch(e) { console.warn("Fuente falló", e); }
 
   for (const id of uniqueResIds) {
      const res = state.resources.find(r => r.id === id);
      if (res && res.file) {
          // Escribimos tu PNG o MP3 en el espacio temporal simulando un path nativo de computadora
-         await ffmpeg.writeFile(res.file.name, await fetchFile(res.file));
+         ffmpeg.FS('writeFile', res.file.name, await fetchFile(res.file));
          inputsMap[res.id] = { fileName: res.file.name, type: res.type };
      }
   }
@@ -192,7 +207,7 @@ export async function exportVideo(btnElement) {
      
      // Archivo temporal de texto para escapar caracteres extraños sin romper ffmpeg cmd
      const txtName = `txt_${i}.txt`;
-     await ffmpeg.writeFile(txtName, clip.textStr || clip.label);
+     ffmpeg.FS('writeFile', txtName, new TextEncoder().encode(clip.textStr || clip.label));
      
      const fontSize = (clip.properties.fontSize || 16) * 3; 
      const yPos = `(h/2) + ${clip.properties.posY ?? 200}`;
@@ -243,9 +258,9 @@ export async function exportVideo(btnElement) {
   console.log("Comando Ensamblado:", args.join(' '));
 
   try {
-      await ffmpeg.exec(args);
+      await ffmpeg.run(...args);
       
-      const data = await ffmpeg.readFile('proyecto_finalizado.mp4');
+      const data = ffmpeg.FS('readFile', 'proyecto_finalizado.mp4');
       const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
       
       const a = document.createElement('a');
