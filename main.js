@@ -547,54 +547,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   // === IA AUTO-SUBTITLES ===
-  async function llamarIAConReintentos(audioBlob, HF_TOKEN, signal) {
-      const MAX_RETRIES = 5; // Intentar 5 veces
-      let delay = 10000; // Esperar 10 segundos mínimos recomendados o el tiempo dictado
-
-      for (let i = 0; i < MAX_RETRIES; i++) {
-          try {
-              console.log(`Intento ${i + 1} de llamar a la IA...`);
-              
-              const url = "/api/hf/models/openai/whisper-large-v3";
-              const response = await fetch(url, {
-                  headers: { 
-                      "Authorization": `Bearer ${HF_TOKEN}`,
-                      "Content-Type": "audio/mp3"
-                  },
-                  method: "POST",
-                  body: audioBlob,
-                  signal: signal
-              });
-
-              const resultText = await response.text();
-              let result;
-              try {
-                  result = JSON.parse(resultText);
-              } catch(jsonErr) {
-                  throw new Error("Respuesta inválida de HuggingFace (posible sobrecarga): " + resultText.substring(0, 50));
-              }
-
-              // CASO 1: El modelo se está cargando (Cold Start)
-              if (result.error && result.error.includes('loading')) {
-                  const estimatedTime = (result.estimated_time || 20) * 1000;
-                  console.warn(`La IA está despertando. Esperando al menos ${estimatedTime / 1000} segundos...`);
-                  await new Promise(res => setTimeout(res, Math.min(estimatedTime, delay)));
-                  continue; // Volver al inicio del bucle (Siguiente intento)
-              }
-
-              // CASO 2: Error de otro tipo
-              if (result.error) throw new Error(result.error);
-
-              // CASO 3: ÉXITO
-              return result;
-
-          } catch (err) {
-              if (err.name === 'AbortError') throw err; // Si se cansó de esperar el timeout global
-              if (i === MAX_RETRIES - 1) throw err; // Si fue el último intento
-              console.error("Fallo temporal, reintentando...", err);
-              await new Promise(res => setTimeout(res, 3000));
-          }
+  async function generarSubtitulosGroq(audioBlob) {
+      // 1. Recuperar el Token de Groq
+      let GROQ_TOKEN = window.localStorage.getItem('groq_temp_token');
+      if (!GROQ_TOKEN || GROQ_TOKEN === 'null') {
+          GROQ_TOKEN = prompt("Pega tu API KEY de Groq (Empieza por gsk_):");
+          if (GROQ_TOKEN) window.localStorage.setItem('groq_temp_token', GROQ_TOKEN);
       }
+      if (!GROQ_TOKEN) throw new Error("Proceso cancelado. Se requiere tu API KEY.");
+
+      // 2. Crear el "paquete" (FormData)
+      const formData = new FormData();
+      formData.append("file", audioBlob, "audio.mp3");
+      formData.append("model", "whisper-large-v3");
+      formData.append("response_format", "verbose_json");
+      formData.append("language", "es");
+
+      // 3. Petición a través del Proxy de Netlify
+      const response = await fetch("/api/groq/audio/transcriptions", {
+          headers: {
+              "Authorization": `Bearer ${GROQ_TOKEN}`
+          },
+          method: "POST",
+          body: formData
+      });
+
+      if (!response.ok) {
+          if (response.status === 401) window.localStorage.removeItem('groq_temp_token');
+          const error = await response.json();
+          throw new Error(error.error?.message || "Error al conectar con Groq");
+      }
+
+      const data = await response.json();
+      
+      return data.segments.map(seg => ({
+          start: seg.start,
+          end: seg.end,
+          text: seg.text
+      }));
   }
   const btnIaSubs = document.getElementById('btn-ia-subs');
   if (btnIaSubs) {
@@ -616,32 +606,20 @@ document.addEventListener('DOMContentLoaded', async () => {
               const audioBlob = await extraerAudioParaIA(res.file);
               if (!audioBlob) throw new Error("FFmpeg falló al extraer el audio.");
               
-              btnIaSubs.innerHTML = "🧠 Pensando (Whisper)...";
+              btnIaSubs.innerHTML = "🧠 Pensando (Whisper Groq)...";
               
-              let HF_TOKEN = window.localStorage.getItem('hf_temp_token');
-              if (!HF_TOKEN || HF_TOKEN === 'null') {
-                  HF_TOKEN = prompt("Ingresa tu token gratuito de HuggingFace (no se guardará en código):");
-                  if (HF_TOKEN) window.localStorage.setItem('hf_temp_token', HF_TOKEN);
-              }
-              if (!HF_TOKEN) throw new Error("Proceso cancelado. Se requiere un Token para invocar la IA.");
+              const segments = await generarSubtitulosGroq(audioBlob);
               
-              const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 segundos de timeout total para permitir los reintentos
-
-              const result = await llamarIAConReintentos(audioBlob, HF_TOKEN, controller.signal);
-              
-              clearTimeout(timeoutId);
-              
-              if (result.chunks) {
-                  result.chunks.forEach(chunk => {
+              if (segments && segments.length > 0) {
+                  segments.forEach(chunk => {
                       state.clips.push({
                           id: Date.now() + Math.random(),
                           resourceId: null,
                           track: 'text',
                           label: chunk.text,
                           type: 'text',
-                          start: chunk.timestamp[0] * PX_PER_SEC,
-                          width: Math.max(15, (chunk.timestamp[1] - chunk.timestamp[0]) * PX_PER_SEC),
+                          start: chunk.start * PX_PER_SEC,
+                          width: Math.max(15, (chunk.end - chunk.start) * PX_PER_SEC),
                           properties: { 
                               color: '#ffffff', 
                               fontSize: 16, 
@@ -653,8 +631,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                           textStr: chunk.text
                       });
                   });
-              } else if (result.text) {
-                  throw new Error("La IA no devolvió marcas temporal.");
+              } else {
+                  throw new Error("La IA no devolvió marcas de tiempo.");
               }
               
               const { renderTimeline } = await import('./src/timeline.js');

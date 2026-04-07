@@ -1,4 +1,4 @@
-import { createFFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
+const { createFFmpeg, fetchFile } = FFmpeg;
 import { state } from './state.js';
 
 let ffmpeg = null;

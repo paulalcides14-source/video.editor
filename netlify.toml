@@ -5,8 +5,8 @@
     Cross-Origin-Embedder-Policy = "require-corp"
 
 [[redirects]]
-  from = "/api/hf/*"
-  to = "https://api-inference.huggingface.co/:splat"
+  from = "/api/groq/*"
+  to = "https://api.groq.com/openai/v1/:splat"
   status = 200
   force = true
 
