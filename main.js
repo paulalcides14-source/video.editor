@@ -547,6 +547,51 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   
   // === IA AUTO-SUBTITLES ===
+  async function llamarIAConReintentos(audioBlob, HF_TOKEN, signal) {
+      const MAX_RETRIES = 5; // Intentar 5 veces
+      let delay = 10000; // Esperar 10 segundos mínimos recomendados o el tiempo dictado
+
+      for (let i = 0; i < MAX_RETRIES; i++) {
+          try {
+              console.log(`Intento ${i + 1} de llamar a la IA...`);
+              
+              const response = await fetch("https://api-inference.huggingface.co/models/openai/whisper-large-v3", {
+                  headers: { "Authorization": `Bearer ${HF_TOKEN}` },
+                  method: "POST",
+                  body: audioBlob,
+                  signal: signal
+              });
+
+              const resultText = await response.text();
+              let result;
+              try {
+                  result = JSON.parse(resultText);
+              } catch(jsonErr) {
+                  throw new Error("Respuesta inválida de HuggingFace (posible sobrecarga): " + resultText.substring(0, 50));
+              }
+
+              // CASO 1: El modelo se está cargando (Cold Start)
+              if (result.error && result.error.includes('loading')) {
+                  const estimatedTime = (result.estimated_time || 20) * 1000;
+                  console.warn(`La IA está despertando. Esperando al menos ${estimatedTime / 1000} segundos...`);
+                  await new Promise(res => setTimeout(res, Math.min(estimatedTime, delay)));
+                  continue; // Volver al inicio del bucle (Siguiente intento)
+              }
+
+              // CASO 2: Error de otro tipo
+              if (result.error) throw new Error(result.error);
+
+              // CASO 3: ÉXITO
+              return result;
+
+          } catch (err) {
+              if (err.name === 'AbortError') throw err; // Si se cansó de esperar el timeout global
+              if (i === MAX_RETRIES - 1) throw err; // Si fue el último intento
+              console.error("Fallo temporal, reintentando...", err);
+              await new Promise(res => setTimeout(res, 3000));
+          }
+      }
+  }
   const btnIaSubs = document.getElementById('btn-ia-subs');
   if (btnIaSubs) {
       btnIaSubs.addEventListener('click', async () => {
@@ -577,33 +622,11 @@ document.addEventListener('DOMContentLoaded', async () => {
               if (!HF_TOKEN) throw new Error("Proceso cancelado. Se requiere un Token para invocar la IA.");
               
               const controller = new AbortController();
-              const timeoutId = setTimeout(() => controller.abort(), 45000); // 45 segundos de timeout
+              const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 segundos de timeout total para permitir los reintentos
 
-              const response = await fetch(
-                  "https://api-inference.huggingface.co/models/openai/whisper-large-v3",
-                  {
-                      headers: { 
-                          "Authorization": `Bearer ${HF_TOKEN}`
-                      },
-                      method: "POST",
-                      body: audioBlob,
-                      signal: controller.signal
-                  }
-              );
+              const result = await llamarIAConReintentos(audioBlob, HF_TOKEN, controller.signal);
               
               clearTimeout(timeoutId);
-              
-              const resultText = await response.text();
-              let result;
-              try {
-                  result = JSON.parse(resultText);
-              } catch(jsonErr) {
-                  throw new Error("Hugging Face API falló o bloqueó la petición (posiblemente el audio es muy largo para la capa gratuita). Respuesta: " + resultText.substring(0, 50));
-              }
-              if (result.error && result.error.includes('loading')) {
-                  throw new Error("El modelo IA está despertando... Espere 20 segundos e intente de nuevo.");
-              }
-              if (result.error) throw new Error(result.error);
               
               if (result.chunks) {
                   result.chunks.forEach(chunk => {
@@ -664,41 +687,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
   }
 
-  // AUTO-LOADER DE PRUEBAS PARA AUDIO MILITAR (Carpeta Pasado)
-  setTimeout(async () => {
-      try {
-          const pastAudioUrl = '/pasado/ElevenLabs_2026-04-06T02_40_50_MILITAR_gen_sp100_s40_sb75_v3.mp3';
-          const r = await fetch(pastAudioUrl);
-          if(!r.ok) return;
-          const blob = await r.blob();
-          const file = new File([blob], "AudioMilitar.mp3", { type: 'audio/mp3' });
-          
-          const audRes = {
-              id: Date.now() + 999,
-              type: 'audio',
-              file: file,
-              label: "Audio Militar",
-              audioElement: new Audio(URL.createObjectURL(file))
-          };
-          state.resources.push(audRes);
-          
-          state.clips.push({
-              id: Date.now() + 1000,
-              resourceId: audRes.id,
-              track: 'audio',
-              label: audRes.label,
-              type: 'audio',
-              start: 0,
-              width: 700, 
-              properties: { opacity: 1.0 },
-              keyframes: { opacity: [] }
-          });
-          
-          window.dispatchEvent(new CustomEvent('resource-added'));
-          const { renderTimeline } = await import('./src/timeline.js');
-          renderTimeline();
-          console.log("✅ Auto-loaded militar audio for testing.");
-      } catch(e) { console.warn("Auto-load failed", e); }
-  }, 1000);
+  // El autoloader fue removido permanentemente.
 
 });
